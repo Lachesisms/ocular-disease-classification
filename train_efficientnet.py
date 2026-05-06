@@ -1,20 +1,21 @@
 """
-模型二：EfficientNetB0 - 最终优化版
-改进列表：
-1. [Bug修复] matplotlib使用Agg后端，plt.show()改为plt.close()，彻底解决Qt报错
-2. [Bug修复] preprocess_input正确归一化，修复原版[0,255]输入的问题
-3. [精度提升] Focal Loss + class_weight，解决类别不平衡
-4. [精度提升] Phase2解冻时显式设置BN层为训练模式，解决EfficientNet微调不稳定问题
-5. [精度提升] Phase2学习率5e-5，比原来1e-4更稳定
-6. [精度提升] Phase1增加至25epoch，给分类头更充分的收敛时间
-7. 训练结束后自动保存.keras格式，方便Flask直接加载
-8. 用sklearn计算最终指标，比keras更准确
+Model 2: EfficientNetB0 - Final Optimized Version
+Key improvements:
+1. matplotlib uses Agg backend; plt.show() replaced with plt.close() to eliminate Qt errors
+2. preprocess_input applies correct normalization, fixing the original [0,255] input issue
+3. Focal Loss + class_weight to address class imbalance
+4. Phase 2 explicitly sets BN layers to training mode after unfreezing,
+   resolving EfficientNet fine-tuning instability
+5. Phase 2 learning rate 5e-5, more stable than the original 1e-4
+6. Phase 1 extended to 25 epochs for more thorough classification head convergence
+7. Full .keras format saved automatically after training for direct Flask loading
+8. Final metrics computed with sklearn for greater accuracy than Keras
 """
 
 import os
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')  # 必须在import pyplot之前，彻底解决Qt报错
+matplotlib.use('Agg')  # Must be set before importing pyplot to eliminate Qt errors
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras.applications import EfficientNetB0
@@ -37,7 +38,7 @@ from data_preparation import (load_and_clean_data, split_data,
                                NUM_CLASSES, TRAIN_IMG_DIR, IMG_SIZE, BATCH_SIZE)
 
 # ============================================================
-# GPU配置
+# GPU configuration
 # ============================================================
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -64,7 +65,7 @@ def focal_loss(gamma=2.0, alpha=0.25, label_smoothing=0.1):
 
 
 # ============================================================
-# 计算class_weight
+# Compute class weights
 # ============================================================
 def get_class_weight(train_gen):
     classes = train_gen.classes
@@ -76,8 +77,8 @@ def get_class_weight(train_gen):
 
 
 # ============================================================
-# 数据生成器
-# preprocess_input将[0,255]→[-1,1]，与ImageNet预训练权重匹配
+# Data generators
+# preprocess_input maps [0,255] -> [-1,1] to match ImageNet pretrained weights
 # ============================================================
 def create_generators(train_df, val_df):
     train_datagen = ImageDataGenerator(
@@ -116,7 +117,7 @@ def create_generators(train_df, val_df):
 
 
 # ============================================================
-# 构建模型
+# Build model
 # ============================================================
 def build_model(freeze_base=True):
     base_model = EfficientNetB0(
@@ -140,8 +141,8 @@ def build_model(freeze_base=True):
 
 
 # ============================================================
-# 阶段1：冻结base，训练分类头
-# epoch增加到25，给分类头更充分的收敛时间
+# Phase 1: Freeze base, train classification head
+# Extended to 25 epochs for more thorough head convergence
 # ============================================================
 def train_phase1(train_gen, val_gen, class_weight_dict):
     print(f"\n{'='*50}")
@@ -178,30 +179,31 @@ def train_phase1(train_gen, val_gen, class_weight_dict):
 
 
 # ============================================================
-# 阶段2：解冻后30层，精细微调
+# Phase 2: Unfreeze last 30 layers for fine-tuning (with BN fix)
 #
-# EfficientNet BN层问题说明：
-# EfficientNet大量使用BN层，解冻后若BN仍在inference模式，
-# 会使用训练阶段积累的running statistics而非当前batch统计量，
-# 导致梯度方向偏差，表现为val_loss震荡不收敛。
-# 修复：解冻的层中显式将所有BN层设为trainable=True。
+# EfficientNet BN issue:
+# EfficientNet uses many BN layers. If BN remains in inference mode
+# after unfreezing, it uses accumulated running statistics rather than
+# current batch statistics, causing gradient misalignment and unstable
+# val_loss. Fix: explicitly set all BN layers in the unfrozen segment
+# to trainable=True to force training mode.
 # ============================================================
 def train_phase2(model, train_gen, val_gen, class_weight_dict):
     print(f"\n{'='*50}")
     print("Phase 2: Fine-tune last 30 layers (with BN fix)")
     print(f"{'='*50}")
 
-    # 全部冻结
+    # Freeze all layers first
     for layer in model.layers:
         layer.trainable = False
 
-    # 解冻后30层，BN层显式设为训练模式
+    # Unfreeze last 30 layers; BN layers explicitly set to training mode
     for layer in model.layers[-30:]:
         layer.trainable = True
 
     trainable_count = sum(1 for l in model.layers if l.trainable)
     bn_count = sum(1 for l in model.layers[-30:] if isinstance(l, BatchNormalization))
-    print(f"可训练层数: {trainable_count}（其中BN层: {bn_count}）")
+    print(f"Trainable layers: {trainable_count} (BN layers: {bn_count})")
 
     model.compile(
         optimizer=Adam(learning_rate=5e-5),
@@ -234,7 +236,7 @@ def train_phase2(model, train_gen, val_gen, class_weight_dict):
 
 
 # ============================================================
-# 评估
+# Evaluation
 # ============================================================
 def evaluate(model, val_gen):
     print(f"\n{'='*50}")
@@ -278,7 +280,7 @@ def plot_confusion_matrix(y_true, y_pred, labels):
     path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_confusion_matrix.png')
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"混淆矩阵已保存: {path}")
+    print(f"Confusion matrix saved: {path}")
 
 
 def plot_roc_auc(y_true, y_pred_prob, labels):
@@ -302,7 +304,7 @@ def plot_roc_auc(y_true, y_pred_prob, labels):
     path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_roc_auc.png')
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"ROC-AUC已保存: {path}")
+    print(f"ROC-AUC saved: {path}")
     print(f"Mean AUC: {np.mean(auc_scores):.4f}")
 
 
@@ -334,7 +336,7 @@ def plot_combined_history(h1, h2):
     path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_training_history.png')
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"训练曲线已保存: {path}")
+    print(f"Training curve saved: {path}")
 
 
 def save_metrics(acc, precision, recall, f1):
@@ -349,7 +351,7 @@ def save_metrics(acc, precision, recall, f1):
 
 
 # ============================================================
-# 主程序
+# Main
 # ============================================================
 if __name__ == "__main__":
     print(f"\n{'='*50}")
@@ -367,9 +369,9 @@ if __name__ == "__main__":
     plot_combined_history(history1, history2)
     evaluate(model, val_gen)
 
-    # 保存完整keras格式，方便Flask直接加载
+    # Save full Keras format for direct Flask loading
     keras_path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_best.keras')
     model.save(keras_path)
-    print(f"完整Keras模型已保存: {keras_path}")
+    print(f"Full Keras model saved: {keras_path}")
 
     print(f"\nDone! Model saved to {MODEL_SAVE_DIR}")

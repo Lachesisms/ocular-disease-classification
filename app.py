@@ -30,8 +30,10 @@ DISEASE_CLASSES = [
     'Other Diseases',                    # 7: O
 ]
 
+
 # ============================================================
-# Grad-CAM 函数
+# Grad-CAM: generates saliency heatmap overlaid on input image
+# to visualize which regions influenced the model's prediction
 # ============================================================
 def generate_gradcam(model, img_array, pred_index, original_img_path):
     last_conv_layer_name = 'conv5_block3_out'
@@ -65,7 +67,7 @@ def generate_gradcam(model, img_array, pred_index, original_img_path):
 
 
 # ============================================================
-# 单张图片处理
+# Process a single uploaded image: save, preprocess, predict, generate Grad-CAM
 # ============================================================
 def process_image(file):
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
@@ -92,7 +94,7 @@ def process_image(file):
 
 
 # ============================================================
-# 路由
+# Routes
 # ============================================================
 @app.route('/')
 def index():
@@ -110,7 +112,7 @@ def predict():
     if not files:
         return "No file uploaded", 400
 
-    results = [process_image(f) for f in files[:2]]  # 最多处理2张
+    results = [process_image(f) for f in files[:2]]  # Process up to 2 images
 
     return render_template('result.html', results=results)
 

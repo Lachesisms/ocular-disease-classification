@@ -1,20 +1,20 @@
 """
-模型三：ResNet152 - 改进版
-改进列表：
-1. [Bug修复] matplotlib使用Agg后端，plt.show()改为plt.close()，彻底解决Qt报错
-2. [精度提升] Focal Loss 替换 categorical_crossentropy，解决类别不平衡
-3. [精度提升] class_weight 双重平衡策略
-4. [精度提升] Phase2解冻层数从20层增加到30层，原来20层对152层的网络太少
-5. [精度提升] Phase2学习率从1e-5改为5e-5，配合部分解冻加快收敛
-6. [精度提升] 新增完整Phase1训练（原版直接跳过Phase1加载旧权重，不规范）
-7. [精度提升] 用sklearn计算最终指标，比keras更准确
-8. 训练结束后自动保存.keras格式，方便Flask直接加载
+Model 3: ResNet152 - Improved Version
+Key improvements:
+1. matplotlib uses Agg backend; plt.show() replaced with plt.close() to eliminate Qt errors
+2. Focal Loss replaces categorical_crossentropy to address class imbalance
+3. Dual class balancing strategy with class_weight
+4. Phase 2 unfrozen layers increased from 20 to 30 — 20 is too conservative for a 152-layer network
+5. Phase 2 learning rate changed from 1e-5 to 5e-5 for faster convergence with partial unfreezing
+6. Full Phase 1 training added — the original version skipped Phase 1 and loaded old weights directly
+7. Final metrics computed with sklearn for greater accuracy than Keras
+8. Full .keras format saved automatically after training for direct Flask loading
 """
 
 import os
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')  # 必须在import pyplot之前，彻底解决Qt报错
+matplotlib.use('Agg')  # Must be set before importing pyplot to eliminate Qt errors
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras.applications import ResNet152
@@ -37,7 +37,7 @@ from data_preparation import (load_and_clean_data, split_data,
                                NUM_CLASSES, TRAIN_IMG_DIR, IMG_SIZE, BATCH_SIZE)
 
 # ============================================================
-# GPU配置
+# GPU configuration
 # ============================================================
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -64,7 +64,7 @@ def focal_loss(gamma=2.0, alpha=0.25, label_smoothing=0.1):
 
 
 # ============================================================
-# 计算class_weight
+# Compute class weights
 # ============================================================
 def get_class_weight(train_gen):
     classes = train_gen.classes
@@ -76,7 +76,7 @@ def get_class_weight(train_gen):
 
 
 # ============================================================
-# 数据生成器（ResNet专用preprocess_input，与ResNet50一致）
+# Data generators (ResNet-specific preprocess_input, consistent with ResNet50)
 # ============================================================
 def create_generators(train_df, val_df):
     train_datagen = ImageDataGenerator(
@@ -115,7 +115,7 @@ def create_generators(train_df, val_df):
 
 
 # ============================================================
-# 构建模型
+# Build model
 # ============================================================
 def build_model(freeze_base=True):
     base_model = ResNet152(
@@ -137,8 +137,9 @@ def build_model(freeze_base=True):
 
 
 # ============================================================
-# 阶段1：冻结base，训练分类头
-# 原版跳过了Phase1直接加载旧权重，改为完整训练更规范
+# Phase 1: Freeze base, train classification head
+# The original version skipped Phase 1 and loaded old weights directly,
+# which is non-standard. A full Phase 1 is added here for correctness.
 # ============================================================
 def train_phase1(train_gen, val_gen, class_weight_dict):
     print(f"\n{'='*50}")
@@ -175,10 +176,12 @@ def train_phase1(train_gen, val_gen, class_weight_dict):
 
 
 # ============================================================
-# 阶段2：解冻后30层进行微调
-# 原版只解冻20层，对于152层的深网络太保守
-# 改为30层，与ResNet50的策略（50层中解冻50层）比例一致
-# 学习率从1e-5改为5e-5，配合部分解冻加快收敛
+# Phase 2: Unfreeze last 30 layers for fine-tuning
+# Previously only 20 layers were unfrozen, which is too conservative
+# for a 152-layer network. Increased to 30 layers to match the
+# unfreezing ratio used in ResNet50 (50 out of ~175 layers).
+# Learning rate changed from 1e-5 to 5e-5 for faster convergence
+# with partial unfreezing.
 # ============================================================
 def train_phase2(model, train_gen, val_gen, class_weight_dict):
     print(f"\n{'='*50}")
@@ -191,7 +194,7 @@ def train_phase2(model, train_gen, val_gen, class_weight_dict):
         layer.trainable = True
 
     trainable_count = sum(1 for l in model.layers if l.trainable)
-    print(f"可训练层数: {trainable_count}")
+    print(f"Trainable layers: {trainable_count}")
 
     model.compile(
         optimizer=Adam(learning_rate=5e-5),
@@ -224,7 +227,7 @@ def train_phase2(model, train_gen, val_gen, class_weight_dict):
 
 
 # ============================================================
-# 评估
+# Evaluation
 # ============================================================
 def evaluate(model, val_gen):
     print(f"\n{'='*50}")
@@ -239,7 +242,7 @@ def evaluate(model, val_gen):
     alpha_labels = sorted(CLASS_NAMES)
     alpha_fullnames = [CLASS_LABELS[CLASS_NAMES.index(c)] for c in alpha_labels]
 
-    # sklearn计算，比keras更准确
+    # sklearn metrics are more accurate than Keras per-batch accumulators
     acc = np.mean(y_pred == y_true)
     f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
     precision = precision_score(y_true, y_pred, average='weighted', zero_division=0)
@@ -269,7 +272,7 @@ def plot_confusion_matrix(y_true, y_pred, labels):
     path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_confusion_matrix.png')
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"混淆矩阵已保存: {path}")
+    print(f"Confusion matrix saved: {path}")
 
 
 def plot_roc_auc(y_true, y_pred_prob, labels):
@@ -293,7 +296,7 @@ def plot_roc_auc(y_true, y_pred_prob, labels):
     path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_roc_auc.png')
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"ROC-AUC已保存: {path}")
+    print(f"ROC-AUC saved: {path}")
     print(f"Mean AUC: {np.mean(auc_scores):.4f}")
 
 
@@ -325,7 +328,7 @@ def plot_combined_history(h1, h2):
     path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_training_history.png')
     plt.savefig(path, dpi=150)
     plt.close()
-    print(f"训练曲线已保存: {path}")
+    print(f"Training curve saved: {path}")
 
 
 def save_metrics(acc, precision, recall, f1):
@@ -340,7 +343,7 @@ def save_metrics(acc, precision, recall, f1):
 
 
 # ============================================================
-# 主程序
+# Main
 # ============================================================
 if __name__ == "__main__":
     print(f"\n{'='*50}")
@@ -358,9 +361,9 @@ if __name__ == "__main__":
     plot_combined_history(history1, history2)
     evaluate(model, val_gen)
 
-    # 保存完整keras格式，方便Flask直接加载
+    # Save full Keras format for direct Flask loading
     keras_path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_best.keras')
     model.save(keras_path)
-    print(f"完整Keras模型已保存: {keras_path}")
+    print(f"Full Keras model saved: {keras_path}")
 
     print(f"\nDone! Model saved to {MODEL_SAVE_DIR}")

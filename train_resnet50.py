@@ -1,11 +1,11 @@
 """
-模型一：ResNet50 - 改进版
-核心改进：
-1. Focal Loss 替换 categorical_crossentropy，解决类别不平衡
-2. class_weight 双重平衡策略
-3. Phase2 只解冻后50层（原来全解冻），保护ImageNet特征
-4. Phase2 学习率从1e-5调整为5e-5，配合部分解冻加快收敛
-5. 标签平滑 0.1，防止对Normal类过度自信
+Model 1: ResNet50 - Improved Version
+Key improvements:
+1. Focal Loss replaces categorical_crossentropy to address class imbalance
+2. Dual class balancing strategy with class_weight
+3. Phase 2 unfreezes only the last 50 layers (previously all 175), preserving ImageNet features
+4. Phase 2 learning rate adjusted from 1e-5 to 5e-5 for faster convergence with partial unfreezing
+5. Label smoothing 0.1 to prevent overconfidence on the Normal class
 """
 
 import os
@@ -30,7 +30,7 @@ from data_preparation import (load_and_clean_data, split_data,
                                CLASS_NAMES, CLASS_LABELS, NUM_CLASSES)
 
 # ============================================================
-# GPU配置
+# GPU configuration
 # ============================================================
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -42,20 +42,20 @@ MODEL_NAME = "ResNet50"
 
 # ============================================================
 # Focal Loss
-# gamma=2.0: 标准值，对难样本的聚焦程度
-# alpha=0.25: 平衡正负样本权重
-# label_smoothing=0.1: 防止模型对dominant class过度自信
+# gamma=2.0: standard value controlling focus on hard samples
+# alpha=0.25: balances positive/negative sample weights
+# label_smoothing=0.1: prevents overconfidence on dominant class
 # ============================================================
 def focal_loss(gamma=2.0, alpha=0.25, label_smoothing=0.1):
     def loss_fn(y_true, y_pred):
         epsilon = 1e-8
         y_pred = tf.clip_by_value(y_pred, epsilon, 1.0 - epsilon)
 
-        # 标签平滑
+        # Label smoothing
         num_classes = tf.cast(tf.shape(y_true)[-1], tf.float32)
         y_true_smooth = y_true * (1.0 - label_smoothing) + label_smoothing / num_classes
 
-        # Focal Loss计算
+        # Focal Loss computation
         ce = -y_true_smooth * tf.math.log(y_pred)
         weight = alpha * y_true_smooth * tf.pow(1.0 - y_pred, gamma)
         fl = weight * ce
@@ -64,7 +64,7 @@ def focal_loss(gamma=2.0, alpha=0.25, label_smoothing=0.1):
 
 
 # ============================================================
-# 计算class_weight
+# Compute class weights
 # ============================================================
 def get_class_weight(train_gen):
     classes = train_gen.classes
@@ -76,7 +76,7 @@ def get_class_weight(train_gen):
 
 
 # ============================================================
-# 构建模型
+# Build model
 # ============================================================
 def build_model(freeze_base=True):
     base_model = ResNet50(
@@ -98,7 +98,7 @@ def build_model(freeze_base=True):
 
 
 # ============================================================
-# 阶段1：冻结base，只训练分类头
+# Phase 1: Freeze base, train classification head only
 # ============================================================
 def train_phase1(train_gen, val_gen, class_weight_dict):
     print(f"\n{'='*50}")
@@ -135,25 +135,27 @@ def train_phase1(train_gen, val_gen, class_weight_dict):
 
 
 # ============================================================
-# 阶段2：只解冻后50层进行微调
-# 原版解冻全部175层，数据量不足容易破坏ImageNet特征
-# 改为只解冻后50层（约含最后2个残差块），平衡迁移与适应
+# Phase 2: Unfreeze last 50 layers for fine-tuning
+# Previously unfroze all 175 layers — insufficient data risks
+# destroying ImageNet features. Unfreezing only the last 50
+# layers (~last 2 residual blocks) balances transfer and adaptation.
+# Learning rate 5e-5: slightly higher than 1e-5 for faster
+# convergence with partial unfreezing, without damaging features.
 # ============================================================
 def train_phase2(model, train_gen, val_gen, class_weight_dict):
     print(f"\n{'='*50}")
     print("Phase 2: Fine-tune last 50 layers")
     print(f"{'='*50}")
 
-    # 全部先冻结，再解冻后50层
+    # Freeze all layers first, then unfreeze last 50
     for layer in model.layers:
         layer.trainable = False
     for layer in model.layers[-50:]:
         layer.trainable = True
 
     trainable_count = sum(1 for l in model.layers if l.trainable)
-    print(f"可训练层数: {trainable_count}")
+    print(f"Trainable layers: {trainable_count}")
 
-    # 5e-5: 比原来1e-5稍大，配合部分解冻加快收敛，又不至于破坏特征
     model.compile(
         optimizer=Adam(learning_rate=5e-5),
         loss=focal_loss(gamma=2.0, alpha=0.25, label_smoothing=0.1),
@@ -185,7 +187,7 @@ def train_phase2(model, train_gen, val_gen, class_weight_dict):
 
 
 # ============================================================
-# 评估
+# Evaluation
 # ============================================================
 def evaluate(model, val_gen):
     print(f"\n{'='*50}")
@@ -200,7 +202,7 @@ def evaluate(model, val_gen):
     alpha_labels = sorted(CLASS_NAMES)
     alpha_fullnames = [CLASS_LABELS[CLASS_NAMES.index(c)] for c in alpha_labels]
 
-    # 用sklearn计算指标，比keras更准确（keras的recall/precision是per-batch累计）
+    # sklearn metrics are more accurate than Keras per-batch accumulators
     acc = np.mean(y_pred == y_true)
     f1 = f1_score(y_true, y_pred, average='weighted')
     from sklearn.metrics import precision_score, recall_score
@@ -231,7 +233,7 @@ def plot_confusion_matrix(y_true, y_pred, labels):
     path = os.path.join(MODEL_SAVE_DIR, f'{MODEL_NAME}_confusion_matrix.png')
     plt.savefig(path, dpi=150)
     plt.show()
-    print(f"混淆矩阵已保存: {path}")
+    print(f"Confusion matrix saved: {path}")
 
 
 def plot_roc_auc(y_true, y_pred_prob, labels):
@@ -300,7 +302,7 @@ def save_metrics(acc, precision, recall, f1):
 
 
 # ============================================================
-# 主程序
+# Main
 # ============================================================
 if __name__ == "__main__":
     print(f"\n{'='*50}")
@@ -311,19 +313,11 @@ if __name__ == "__main__":
     train_df, val_df = split_data(df)
     train_gen, val_gen = create_generators(train_df, val_df)
 
-    # 计算class_weight
     class_weight_dict = get_class_weight(train_gen)
 
-    # 阶段1
     model, history1 = train_phase1(train_gen, val_gen, class_weight_dict)
-
-    # 阶段2
     model, history2 = train_phase2(model, train_gen, val_gen, class_weight_dict)
-
-    # 绘图
     plot_combined_history(history1, history2)
-
-    # 评估
     evaluate(model, val_gen)
 
     print(f"\nDone! Model saved to {MODEL_SAVE_DIR}")

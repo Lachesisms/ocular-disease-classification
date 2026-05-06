@@ -1,6 +1,7 @@
 """
-数据预处理模块 - 简化版
-直接使用原始图像，让ResNet50的预训练权重正常工作
+Data preprocessing module
+Uses raw images with model-specific preprocessing functions
+to ensure compatibility with pretrained ImageNet weights.
 """
 
 import os
@@ -12,7 +13,7 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications.resnet50 import preprocess_input
 
 # ============================================================
-# 路径配置
+# Path configuration
 # ============================================================
 BASE_DIR = r"D:\EyeDieaseProject\ODIR-5K\ODIR-5K"
 CSV_PATH = os.path.join(BASE_DIR, "full_df.csv")
@@ -20,7 +21,7 @@ TRAIN_IMG_DIR = os.path.join(BASE_DIR, "Training Images")
 MODEL_SAVE_DIR = r"D:\EyeDieaseProject\model"
 os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
 
-# 类别配置
+# Class configuration
 CLASS_NAMES = ['N', 'D', 'G', 'C', 'A', 'H', 'M', 'O']
 CLASS_LABELS = [
     'Normal', 'Diabetes', 'Glaucoma', 'Cataract',
@@ -29,11 +30,11 @@ CLASS_LABELS = [
 ]
 NUM_CLASSES = 8
 IMG_SIZE = (224, 224)
-BATCH_SIZE = 32  # 增大batch size，训练更稳定
+BATCH_SIZE = 32
 
 
 # ============================================================
-# 数据加载
+# Data loading
 # ============================================================
 def load_and_clean_data():
     df = pd.read_csv(CSV_PATH)
@@ -64,7 +65,7 @@ def load_and_clean_data():
 
 
 def _get_labels(df):
-    """单标签优先级：N > D > G > C > A > H > M > O"""
+    """Single-label priority assignment: N > D > G > C > A > H > M > O"""
     conditions = [
         (df['N'] == 1, 'N'),
         (df['D'] == 1, 'D'),
@@ -89,14 +90,14 @@ def split_data(df):
 
 
 # ============================================================
-# 关键修复：使用ResNet专用预处理函数替代rescale
-# preprocess_input会做正确的均值/方差归一化
-# 与ImageNet预训练权重完全匹配
+# Key fix: use ResNet-specific preprocessing instead of rescale.
+# preprocess_input applies correct mean/variance normalization
+# to fully match ImageNet pretrained weight expectations.
 # ============================================================
 def create_generators(train_df, val_df):
-    # 训练集：有数据增强
+    # Training set: with data augmentation
     train_datagen = ImageDataGenerator(
-        preprocessing_function=preprocess_input,  # ResNet专用预处理
+        preprocessing_function=preprocess_input,
         rotation_range=15,
         width_shift_range=0.1,
         height_shift_range=0.1,
@@ -106,7 +107,7 @@ def create_generators(train_df, val_df):
         fill_mode='nearest'
     )
 
-    # 验证集：只做ResNet预处理，不做增强
+    # Validation set: preprocessing only, no augmentation
     val_datagen = ImageDataGenerator(
         preprocessing_function=preprocess_input
     )
@@ -138,7 +139,7 @@ def create_generators(train_df, val_df):
 
 
 # ============================================================
-# 主程序
+# Main
 # ============================================================
 if __name__ == "__main__":
     df = load_and_clean_data()
