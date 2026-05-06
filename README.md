@@ -13,8 +13,8 @@ and Normal/Other categories.
 | Model          | Accuracy | F1    |
 |----------------|----------|-------|
 | ResNet50       | 86.8%    | 0.868 |
-| EfficientNetB0 | -        | -     |
-| ResNet152      | -        | -     |
+| EfficientNetB0 | 58.5%    | 0.551 |
+| ResNet152      | 79.6%    | 0.795 |
 
 ## Key Features
 - Two-phase transfer learning strategy
